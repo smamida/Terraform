@@ -1,0 +1,180 @@
+provider "aws" {
+  region = "ap-south-1"
+}
+
+# Create the S3 bucket to store the events
+resource "aws_s3_bucket" "cloudtrail_bucket" {
+  bucket = var.s3_bucket_name
+}
+
+# Create the S3 bucket policy to allow CloudTrail access
+resource "aws_s3_bucket_policy" "cloudtrail_bucket_policies" {
+  bucket = aws_s3_bucket.cloudtrail_bucket.id
+
+  policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [
+      {
+        Sid = "AWSCloudTrailAclCheck",
+        Effect = "Allow",
+        Principal = {
+          Service = "cloudtrail.amazonaws.com"
+        },
+        Action = "s3:GetBucketAcl",
+        Resource = aws_s3_bucket.cloudtrail_bucket.arn
+      },
+      {
+        Sid = "AWSCloudTrailWrite",
+        Effect = "Allow",
+        Principal = {
+          Service = "cloudtrail.amazonaws.com"
+        },
+        Action = "s3:PutObject",
+        Resource = "${aws_s3_bucket.cloudtrail_bucket.arn}/AWSLogs/${var.account_id}/*",
+        Condition = {
+          StringEquals = {
+            "s3:x-amz-acl" = "bucket-owner-full-control"
+          }
+        }
+      }
+    ]
+  })
+}
+
+# Create a CloudWatch log group
+resource "aws_cloudwatch_log_group" "cloudtrail_log_group" {
+  name              = var.cloudtrail_log_group_name
+  retention_in_days = 30
+}
+
+# Create IAM role for CloudTrail
+resource "aws_iam_role" "cloudrole" {
+  name = var.iam_role_name
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [
+      {
+        Effect = "Allow",
+        Principal = {
+          Service = "cloudtrail.amazonaws.com"
+        },
+        Action = "sts:AssumeRole"
+      }
+    ]
+  })
+}
+
+# Create IAM role policy for CloudTrail
+resource "aws_iam_role_policy" "cloudtrail_policy" {
+  name = var.iam_role_policy_name
+  role = aws_iam_role.cloudrole.name
+
+  policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [
+      {
+        Sid = "AWSCloudTrailCreateLogStream2014110",
+        Effect = "Allow",
+        Action = [
+          "logs:CreateLogStream"
+        ],
+        Resource = "${aws_cloudwatch_log_group.cloudtrail_log_group.arn}:*"
+      },
+      {
+        Sid = "AWSCloudTrailPutLogEvents20141101",
+        Effect = "Allow",
+        Action = [
+          "logs:PutLogEvents"
+        ],
+        Resource = "${aws_cloudwatch_log_group.cloudtrail_log_group.arn}:log-stream:*"
+      }
+    ]
+  })
+}
+
+# Create the CloudTrail
+resource "aws_cloudtrail" "traill" {
+  name                          = var.cloudtrail_name
+  s3_bucket_name                = aws_s3_bucket.cloudtrail_bucket.bucket
+  enable_log_file_validation    = true
+  include_global_service_events = true
+  is_multi_region_trail         = true
+  enable_logging                = true
+
+  cloud_watch_logs_role_arn     = aws_iam_role.cloudrole.arn
+  cloud_watch_logs_group_arn    = "${aws_cloudwatch_log_group.cloudtrail_log_group.arn}:*"
+
+  event_selector {
+    read_write_type           = "All"
+    include_management_events = false
+
+    data_resource {
+      type   = "AWS::S3::Object"
+      values = ["arn:aws:s3:::${aws_s3_bucket.cloudtrail_bucket.bucket}/*"]
+    }
+  }
+}
+---------------------------------------------------------
+module
+
+provider "aws" {
+    region = "ap-south-1"
+   
+}
+module "cloudtrail" {
+    source = "../modules/trail"
+    s3_bucket_name = "exel-cloudtraillogsbucket"
+    cloudtrail_log_group_name ="test-trailS"
+    retention_in_day ="30"
+    iam_role_name="Trail_role"
+    iam_role_policy_name="cloudtrail_policy"
+    cloudtrail_name = "my-cloudtrail"
+    account_id = "471112791735"
+}
+
+
+
+
+
+
+
+-------------------------------------------------
+variables
+
+
+variable "s3_bucket_name" { type    = string   }
+
+variable "cloudtrail_log_group_name" {
+  type        = string
+}
+
+variable "retention_in_day" {
+    type = string
+ 
+}
+variable "iam_role_name" {
+  type        = string
+ 
+}
+
+variable "iam_role_policy_name" { 
+  type        = string
+
+}
+
+variable "cloudtrail_name" {
+  
+  type        = string
+  
+}
+
+variable "account_id" {
+  type        = string
+  
+}
+--------------
+
+
+
+
